@@ -53,10 +53,25 @@ export class PricesAllService {
     let lastUpdated: string | null = null;
 
     // Extract last updated time
+    // Format: "Last Updated: 28 January 2026    14.02"
     const updateNote = $('.update-note').first().text();
-    const updateMatch = updateNote.match(/Last Updated:\s*(.+?)(?:\*|$)/i);
-    if (updateMatch) {
-      lastUpdated = updateMatch[1].trim();
+    
+    // Try multiple patterns to extract date and time
+    // Pattern 1: "28 January 2026" with optional time "14.02"
+    const dateTimeMatch = updateNote.match(/(\d{1,2}\s+\w+\s+\d{4})\s*(?:.*?(\d{1,2}[.:]\d{2}))?/i);
+    if (dateTimeMatch) {
+      const date = dateTimeMatch[1];
+      const time = dateTimeMatch[2] || '';
+      lastUpdated = time ? `${date} ${time}` : date;
+    }
+    
+    // Fallback: try to get from strong tag
+    if (!lastUpdated) {
+      const strongText = $('.update-note strong').first().text().trim();
+      if (strongText) {
+        // Clean up the text (remove extra spaces)
+        lastUpdated = strongText.replace(/\s+/g, ' ').trim();
+      }
     }
 
     // Scrape all tables with class "lm-table"
