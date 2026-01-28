@@ -5,6 +5,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule } from '@nestjs/config';
 import { PricesModule } from './prices/prices.module';
+import { PricesAllModule } from './prices-all/prices-all.module';
 import { CrawlerModule } from './crawler/crawler.module';
 // import { DatabaseModule } from './database/database.module';
 import { SitesModule } from './sites/sites.module';
@@ -25,8 +26,9 @@ import Joi = require('@hapi/joi');
       }),
       envFilePath: ['.env'],
     }),
-    // DatabaseModule,
+// DatabaseModule,
     PricesModule,
+    PricesAllModule,
     CrawlerModule,
     SitesModule,
   ],
