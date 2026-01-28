@@ -38,6 +38,117 @@ export class PricesAllService {
     }
   }
 
+  async scrapeAllAsRss(site: string): Promise<string> {
+    const result = await this.scrapeAll(site);
+    return this.convertToRss(result, site);
+  }
+
+  private convertToRss(result: ScrapeResult, site: string): string {
+    const { data, meta } = result;
+    
+    // Generate unique GUID based on lastUpdated
+    const guidBase = meta.lastUpdated 
+      ? meta.lastUpdated.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()
+      : new Date().toISOString().split('T')[0];
+    const guid = `${site}-${guidBase}`;
+    
+    // Convert lastUpdated to RFC 822 format for RSS
+    const pubDate = this.formatRfc822Date(meta.lastUpdated);
+    
+    // Build price description
+    const priceLines = data.map(item => {
+      const sellFormatted = this.formatRupiah(item.sell);
+      const buyFormatted = this.formatRupiah(item.buy);
+      return `${item.weight}${item.unit}: ${sellFormatted} (jual) / ${buyFormatted} (beli)`;
+    }).join('\n');
+
+    // Build price summary for title
+    const price1g = data.find(item => item.weight === 1);
+    const priceSummary = price1g 
+      ? `1g: ${this.formatRupiah(price1g.sell)}` 
+      : `${data.length} items`;
+
+    const siteTitle = this.getSiteTitle(site);
+    
+    const rss = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Harga Emas ${siteTitle}</title>
+    <link>${meta.url}</link>
+    <description>Update harga emas dari ${siteTitle}</description>
+    <language>id</language>
+    <lastBuildDate>${pubDate}</lastBuildDate>
+    <atom:link href="https://logam-mulia-api-nine.vercel.app/prices-all/${site}/rss" rel="self" type="application/rss+xml"/>
+    <item>
+      <title>Update Harga Emas ${siteTitle} - ${meta.lastUpdated || 'Terbaru'} (${priceSummary})</title>
+      <link>${meta.url}</link>
+      <guid isPermaLink="false">${guid}</guid>
+      <pubDate>${pubDate}</pubDate>
+      <description><![CDATA[
+<h3>Harga Emas ${siteTitle}</h3>
+<p><strong>Terakhir Update:</strong> ${meta.lastUpdated || 'N/A'}</p>
+<p><strong>Scraped At:</strong> ${meta.scrapedAt}</p>
+<hr/>
+<pre>
+${priceLines}
+</pre>
+<hr/>
+<p>Source: <a href="${meta.url}">${meta.url}</a></p>
+      ]]></description>
+    </item>
+  </channel>
+</rss>`;
+
+    return rss;
+  }
+
+  private getSiteTitle(site: string): string {
+    const titles: Record<string, string> = {
+      'anekalogam': 'Aneka Logam',
+      'indogold': 'IndoGold',
+      'pegadaian': 'Pegadaian',
+    };
+    return titles[site] || site;
+  }
+
+  private formatRupiah(amount: number): string {
+    if (!amount) return 'Rp 0';
+    return `Rp ${amount.toLocaleString('id-ID')}`;
+  }
+
+  private formatRfc822Date(dateStr: string | null): string {
+    if (!dateStr) {
+      return new Date().toUTCString();
+    }
+
+    // Try to parse Indonesian date format: "28 January 2026 14.02"
+    const months: Record<string, number> = {
+      'january': 0, 'februari': 1, 'february': 1, 'maret': 2, 'march': 2,
+      'april': 3, 'mei': 4, 'may': 4, 'juni': 5, 'june': 5,
+      'juli': 6, 'july': 6, 'agustus': 7, 'august': 7,
+      'september': 8, 'oktober': 9, 'october': 9,
+      'november': 10, 'desember': 11, 'december': 11,
+      'januari': 0
+    };
+
+    const match = dateStr.match(/(\d{1,2})\s+(\w+)\s+(\d{4})(?:\s+(\d{1,2})[.:](\d{2}))?/i);
+    if (match) {
+      const day = parseInt(match[1]);
+      const monthName = match[2].toLowerCase();
+      const year = parseInt(match[3]);
+      const hour = match[4] ? parseInt(match[4]) : 12;
+      const minute = match[5] ? parseInt(match[5]) : 0;
+
+      const month = months[monthName];
+      if (month !== undefined) {
+        const date = new Date(year, month, day, hour, minute);
+        return date.toUTCString();
+      }
+    }
+
+    return new Date().toUTCString();
+  }
+
   private async scrapeAnekalogam(): Promise<ScrapeResult> {
     const url = 'https://www.anekalogam.co.id/id/logam-mulia';
     const response = await firstValueFrom(
