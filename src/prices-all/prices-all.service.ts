@@ -3,7 +3,7 @@ import { HttpService } from '@nestjs/axios';
 import * as cheerio from 'cheerio';
 import { firstValueFrom } from 'rxjs';
 
-interface PriceItem {
+export interface PriceItem {
   weight: number;
   unit: string;
   sell: number;
@@ -11,7 +11,7 @@ interface PriceItem {
   type: string;
 }
 
-interface ScrapeResult {
+export interface ScrapeResult {
   data: PriceItem[];
   meta: {
     source: string;
@@ -55,21 +55,55 @@ export class PricesAllService {
     // Convert lastUpdated to RFC 822 format for RSS
     const pubDate = this.formatRfc822Date(meta.lastUpdated);
     
-    // Build price description
-    const priceLines = data.map(item => {
+    // Get current date/time in WIB
+    const now = new Date();
+    const wibOffset = 7 * 60 * 60 * 1000; // UTC+7
+    const wibDate = new Date(now.getTime() + wibOffset);
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const dayName = dayNames[wibDate.getUTCDay()];
+    const day = wibDate.getUTCDate();
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const month = monthNames[wibDate.getUTCMonth()];
+    const year = wibDate.getUTCFullYear();
+    const hours = wibDate.getUTCHours().toString().padStart(2, '0');
+    const minutes = wibDate.getUTCMinutes().toString().padStart(2, '0');
+    const currentDateTime = `${dayName}, ${day} ${month} ${year} - ${hours}:${minutes} WIB`;
+
+    const siteTitle = this.getSiteTitle(site);
+    
+    // Sort data by weight descending (largest first)
+    const sortedData = [...data].sort((a, b) => b.weight - a.weight);
+    
+    // Build price list with bullet points
+    const priceLines = sortedData.map(item => {
       const sellFormatted = this.formatRupiah(item.sell);
-      const buyFormatted = this.formatRupiah(item.buy);
-      return `${item.weight}${item.unit}: ${sellFormatted} (jual) / ${buyFormatted} (beli)`;
+      return `• ${item.weight} gram: ${sellFormatted}`;
     }).join('\n');
 
-    // Build price summary for title
+    // Get buyback price (from 1 gram buy price)
     const price1g = data.find(item => item.weight === 1);
+    const buybackPrice = price1g ? this.formatRupiah(price1g.buy) : 'N/A';
+    
+    // Build price summary for title
     const priceSummary = price1g 
       ? `1g: ${this.formatRupiah(price1g.sell)}` 
       : `${data.length} items`;
 
-    const siteTitle = this.getSiteTitle(site);
+    // Format lastUpdated for footer
+    const updateTime = meta.lastUpdated || 'N/A';
     
+    // Build plain text description (for RSS readers that support it)
+    const plainTextDescription = `🪙 HARGA EMAS ${siteTitle.toUpperCase()} HARI INI
+${currentDateTime}
+
+📊 Daftar Harga:
+${priceLines}
+
+💰 Harga buyback: ${buybackPrice}/gram
+
+Update harga: ${updateTime}
+Update terakhir: ${currentDateTime}`;
+
     const rss = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
@@ -80,21 +114,11 @@ export class PricesAllService {
     <lastBuildDate>${pubDate}</lastBuildDate>
     <atom:link href="https://logam-mulia-api-nine.vercel.app/prices-all/${site}/rss" rel="self" type="application/rss+xml"/>
     <item>
-      <title>Update Harga Emas ${siteTitle} - ${meta.lastUpdated || 'Terbaru'} (${priceSummary})</title>
+      <title>🪙 Harga Emas ${siteTitle} - ${updateTime} (${priceSummary})</title>
       <link>${meta.url}</link>
       <guid isPermaLink="false">${guid}</guid>
       <pubDate>${pubDate}</pubDate>
-      <description><![CDATA[
-<h3>Harga Emas ${siteTitle}</h3>
-<p><strong>Terakhir Update:</strong> ${meta.lastUpdated || 'N/A'}</p>
-<p><strong>Scraped At:</strong> ${meta.scrapedAt}</p>
-<hr/>
-<pre>
-${priceLines}
-</pre>
-<hr/>
-<p>Source: <a href="${meta.url}">${meta.url}</a></p>
-      ]]></description>
+      <description><![CDATA[${plainTextDescription}]]></description>
     </item>
   </channel>
 </rss>`;

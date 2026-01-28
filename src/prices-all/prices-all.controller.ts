@@ -1,6 +1,5 @@
-import { Controller, Get, Param, Res, Header } from '@nestjs/common';
-import { Response } from 'express';
-import { PricesAllService } from './prices-all.service';
+import { Controller, Get, Param, Header } from '@nestjs/common';
+import { PricesAllService, ScrapeResult } from './prices-all.service';
 import { Public } from '../core/decorators/public.decorator';
 
 @Controller('prices-all')
@@ -16,7 +15,7 @@ export class PricesAllController {
 
   @Get(':site')
   @Public()
-  async getAllPrices(@Param('site') site: string) {
+  async getAllPrices(@Param('site') site: string): Promise<ScrapeResult> {
     return this.pricesAllService.scrapeAll(site);
   }
 
