@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Header } from '@nestjs/common';
+import { Controller, Get, Param, Query, Header } from '@nestjs/common';
 import { PricesAllService, ScrapeResult } from './prices-all.service';
 import { Public } from '../core/decorators/public.decorator';
 
@@ -9,14 +9,20 @@ export class PricesAllController {
   @Get(':site/rss')
   @Public()
   @Header('Content-Type', 'application/rss+xml; charset=utf-8')
-  async getRssFeed(@Param('site') site: string) {
-    return this.pricesAllService.scrapeAllAsRss(site);
+  async getRssFeed(
+    @Param('site') site: string,
+    @Query('type') type?: string,
+  ) {
+    return this.pricesAllService.scrapeAllAsRss(site, type);
   }
 
   @Get(':site')
   @Public()
-  async getAllPrices(@Param('site') site: string): Promise<ScrapeResult> {
-    return this.pricesAllService.scrapeAll(site);
+  async getAllPrices(
+    @Param('site') site: string,
+    @Query('type') type?: string,
+  ): Promise<ScrapeResult> {
+    return this.pricesAllService.scrapeAll(site, type);
   }
 
   @Get()

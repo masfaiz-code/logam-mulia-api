@@ -25,25 +25,49 @@ export interface ScrapeResult {
 export class PricesAllService {
   constructor(private readonly httpService: HttpService) {}
 
-  async scrapeAll(site: string): Promise<ScrapeResult> {
+  async scrapeAll(site: string, type?: string): Promise<ScrapeResult> {
+    let result: ScrapeResult;
+    
     switch (site) {
       case 'anekalogam':
-        return this.scrapeAnekalogam();
+        result = await this.scrapeAnekalogam();
+        break;
       case 'indogold':
-        return this.scrapeIndogold();
+        result = await this.scrapeIndogold();
+        break;
       case 'pegadaian':
-        return this.scrapePegadaian();
+        result = await this.scrapePegadaian();
+        break;
       default:
         throw new Error(`Site "${site}" is not supported for full price scraping. Supported sites: anekalogam, indogold, pegadaian`);
     }
+
+    // Filter by type if specified
+    if (type) {
+      result.data = result.data.filter(item => item.type === type);
+    }
+
+    return result;
   }
 
-  async scrapeAllAsRss(site: string): Promise<string> {
-    const result = await this.scrapeAll(site);
-    return this.convertToRss(result, site);
+  async scrapeAllAsRss(site: string, type?: string): Promise<string> {
+    const result = await this.scrapeAll(site, type);
+    return this.convertToRss(result, site, type);
   }
 
-  private convertToRss(result: ScrapeResult, site: string): string {
+  private getTypeTitle(type?: string): string {
+    if (!type) return '';
+    
+    const titles: Record<string, string> = {
+      'antam': 'Antam',
+      'antam-certicard': 'Antam Certicard',
+      'antam-old': 'Antam Edisi Lama',
+      'pegadaian': 'Pegadaian',
+    };
+    return titles[type] || type;
+  }
+
+  private convertToRss(result: ScrapeResult, site: string, type?: string): string {
     const { data, meta } = result;
     
     // Generate unique GUID based on lastUpdated
@@ -70,6 +94,9 @@ export class PricesAllService {
     const currentDateTime = `${dayName}, ${day} ${month} ${year} - ${hours}:${minutes} WIB`;
 
     const siteTitle = this.getSiteTitle(site);
+    const typeTitle = this.getTypeTitle(type);
+    // Use type title if available, otherwise use site title
+    const displayTitle = typeTitle || siteTitle;
     
     // Sort data by weight descending (largest first)
     const sortedData = [...data].sort((a, b) => b.weight - a.weight);
@@ -92,8 +119,16 @@ export class PricesAllService {
     // Format lastUpdated for footer
     const updateTime = meta.lastUpdated || 'N/A';
     
+    // Build RSS feed URL with type query if specified
+    const rssUrl = type 
+      ? `https://logam-mulia-api-nine.vercel.app/prices-all/${site}/rss?type=${type}`
+      : `https://logam-mulia-api-nine.vercel.app/prices-all/${site}/rss`;
+    
+    // Build unique GUID with type
+    const guidWithType = type ? `${guid}-${type}` : guid;
+    
     // Build plain text description (for RSS readers that support it)
-    const plainTextDescription = `🪙 HARGA EMAS ${siteTitle.toUpperCase()} HARI INI
+    const plainTextDescription = `🪙 HARGA EMAS ${displayTitle.toUpperCase()} HARI INI
 ${currentDateTime}
 
 📊 Daftar Harga:
@@ -107,16 +142,16 @@ Update terakhir: ${currentDateTime}`;
     const rss = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
-    <title>Harga Emas ${siteTitle}</title>
+    <title>Harga Emas ${displayTitle}</title>
     <link>${meta.url}</link>
-    <description>Update harga emas dari ${siteTitle}</description>
+    <description>Update harga emas dari ${displayTitle}</description>
     <language>id</language>
     <lastBuildDate>${pubDate}</lastBuildDate>
-    <atom:link href="https://logam-mulia-api-nine.vercel.app/prices-all/${site}/rss" rel="self" type="application/rss+xml"/>
+    <atom:link href="${rssUrl}" rel="self" type="application/rss+xml"/>
     <item>
-      <title>🪙 Harga Emas ${siteTitle} - ${updateTime} (${priceSummary})</title>
+      <title>🪙 Harga Emas ${displayTitle} - ${updateTime} (${priceSummary})</title>
       <link>${meta.url}</link>
-      <guid isPermaLink="false">${guid}</guid>
+      <guid isPermaLink="false">${guidWithType}</guid>
       <pubDate>${pubDate}</pubDate>
       <description><![CDATA[${plainTextDescription}]]></description>
     </item>
