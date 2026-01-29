@@ -92,12 +92,33 @@ export class PricesAllService {
   }
 
   async scrapeAllAsRss(site: string, type?: string): Promise<string> {
+    // Step 1: Get cached prices from database first
+    const cachedPrices = await this.supabaseService.getLatestPrices(site, type);
+
+    // Step 2: Scrape fresh data from website
     const result = await this.scrapeAll(site, type);
 
-    // Get price changes from database
+    // Step 3: Check if prices have changed
+    const hasChanged = this.supabaseService.hasPricesChanged(
+      cachedPrices,
+      result.data
+    );
+
+    // Step 4: Get price changes for display
     const pricesWithChange = await this.getPriceChanges(result);
 
-    return this.convertToRss(result, site, type, pricesWithChange);
+    // Step 5: Generate stable GUID based on price hash (not timestamp!)
+    // If prices haven't changed, GUID stays the same = no new RSS notification
+    const priceHash = this.supabaseService.generatePriceHash(result.data);
+
+    return this.convertToRss(
+      result,
+      site,
+      type,
+      pricesWithChange,
+      priceHash,
+      hasChanged
+    );
   }
 
   /**
@@ -163,15 +184,20 @@ export class PricesAllService {
     result: ScrapeResult,
     site: string,
     type?: string,
-    priceChangeMap?: Map<string, PriceItemWithChange>
+    priceChangeMap?: Map<string, PriceItemWithChange>,
+    priceHash?: string,
+    hasChanged?: boolean
   ): string {
     const { data, meta } = result;
 
-    // Generate unique GUID based on lastUpdated
-    const guidBase = meta.lastUpdated
-      ? meta.lastUpdated.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase()
-      : new Date().toISOString().split("T")[0];
-    const guid = `${site}-${guidBase}`;
+    // Generate stable GUID based on price hash (not timestamp!)
+    // This ensures RSS readers only show new notifications when prices actually change
+    const guid = priceHash
+      ? `${site}-${type || "all"}-${priceHash}`
+      : `${site}-${
+          meta.lastUpdated?.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase() ||
+          new Date().toISOString().split("T")[0]
+        }`;
 
     // Convert lastUpdated to RFC 822 format for RSS
     const pubDate = this.formatRfc822Date(meta.lastUpdated);
@@ -271,8 +297,8 @@ export class PricesAllService {
       ? `https://logam-mulia-api-nine.vercel.app/prices-all/${site}/rss?type=${type}`
       : `https://logam-mulia-api-nine.vercel.app/prices-all/${site}/rss`;
 
-    // Build unique GUID with type
-    const guidWithType = type ? `${guid}-${type}` : guid;
+    // GUID is already generated from price hash - use directly
+    // Same prices = same GUID = RSS reader won't show duplicate notification
 
     // Build plain text description (for RSS readers that support it)
     const plainTextDescription = `🪙 HARGA EMAS ${displayTitle.toUpperCase()} HARI INI
@@ -297,7 +323,7 @@ ${priceLines}
     <item>
       <title>🪙 Harga Emas ${displayTitle} - ${updateTime} (${priceSummary})</title>
       <link>${meta.url}</link>
-      <guid isPermaLink="false">${guidWithType}</guid>
+      <guid isPermaLink="false">${guid}</guid>
       <pubDate>${pubDate}</pubDate>
       <description><![CDATA[${plainTextDescription}]]></description>
     </item>

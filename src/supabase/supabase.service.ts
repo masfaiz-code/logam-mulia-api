@@ -155,4 +155,113 @@ export class SupabaseService {
 
     return data || [];
   }
+
+  /**
+   * Get the latest prices from database for a source and optional type
+   * Returns the most recent price for each weight
+   */
+  async getLatestPrices(
+    source: string,
+    type?: string
+  ): Promise<GoldPriceHistory[]> {
+    let query = this.supabase
+      .from("gold_price_history")
+      .select("*")
+      .eq("source", source)
+      .order("scraped_at", { ascending: false });
+
+    if (type) {
+      query = query.eq("type", type);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error("Error fetching latest prices:", error);
+      return [];
+    }
+
+    if (!data || data.length === 0) {
+      return [];
+    }
+
+    // Group by type+weight and take only the most recent for each
+    const latestByKey = new Map<string, GoldPriceHistory>();
+    for (const price of data) {
+      const key = `${price.type}-${price.weight}`;
+      if (!latestByKey.has(key)) {
+        latestByKey.set(key, price);
+      }
+    }
+
+    return Array.from(latestByKey.values());
+  }
+
+  /**
+   * Check if prices have changed compared to database
+   * Returns true if there's any difference in sell_price
+   */
+  hasPricesChanged(
+    cachedPrices: GoldPriceHistory[],
+    newPrices: { type: string; weight: number; sell: number; buy: number }[]
+  ): boolean {
+    if (cachedPrices.length === 0) {
+      return true; // No cache, treat as changed
+    }
+
+    // Create map of cached prices
+    const cachedMap = new Map<string, GoldPriceHistory>();
+    for (const price of cachedPrices) {
+      const key = `${price.type}-${price.weight}`;
+      cachedMap.set(key, price);
+    }
+
+    // Compare with new prices
+    for (const newPrice of newPrices) {
+      const key = `${newPrice.type}-${newPrice.weight}`;
+      const cached = cachedMap.get(key);
+
+      if (!cached) {
+        return true; // New item not in cache
+      }
+
+      if (
+        cached.sell_price !== newPrice.sell ||
+        cached.buy_price !== newPrice.buy
+      ) {
+        return true; // Price changed
+      }
+    }
+
+    return false; // No changes
+  }
+
+  /**
+   * Generate a hash from prices for stable GUID
+   * Same prices = same hash = same GUID = no new RSS notification
+   */
+  generatePriceHash(
+    prices: { type: string; weight: number; sell: number; buy: number }[]
+  ): string {
+    // Sort prices to ensure consistent hash
+    const sorted = [...prices].sort((a, b) => {
+      if (a.type !== b.type) return a.type.localeCompare(b.type);
+      return a.weight - b.weight;
+    });
+
+    // Create a string representation
+    const priceString = sorted
+      .map((p) => `${p.type}:${p.weight}:${p.sell}:${p.buy}`)
+      .join("|");
+
+    // Simple hash function
+    let hash = 0;
+    for (let i = 0; i < priceString.length; i++) {
+      const char = priceString.charCodeAt(i);
+      hash = (hash << 5) - hash + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+
+    return Math.abs(hash).toString(36);
+  }
 }
