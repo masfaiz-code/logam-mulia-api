@@ -1,15 +1,16 @@
-import { IsUniqueConstraint } from './core/decorators/is-unique.decorator';
-import { IsExistConstraint } from './core/decorators/is-exist.decorator';
-import { Module } from '@nestjs/common';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
-import { ConfigModule } from '@nestjs/config';
-import { PricesModule } from './prices/prices.module';
-import { PricesAllModule } from './prices-all/prices-all.module';
-import { CrawlerModule } from './crawler/crawler.module';
+import { IsUniqueConstraint } from "./core/decorators/is-unique.decorator";
+import { IsExistConstraint } from "./core/decorators/is-exist.decorator";
+import { Module } from "@nestjs/common";
+import { AppController } from "./app.controller";
+import { AppService } from "./app.service";
+import { ConfigModule } from "@nestjs/config";
+import { PricesModule } from "./prices/prices.module";
+import { PricesAllModule } from "./prices-all/prices-all.module";
+import { CrawlerModule } from "./crawler/crawler.module";
 // import { DatabaseModule } from './database/database.module';
-import { SitesModule } from './sites/sites.module';
-import Joi = require('@hapi/joi');
+import { SitesModule } from "./sites/sites.module";
+import { SupabaseModule } from "./supabase/supabase.module";
+import Joi = require("@hapi/joi");
 
 @Module({
   imports: [
@@ -24,9 +25,10 @@ import Joi = require('@hapi/joi');
         // DATABASE_PASSWORD: Joi.string().required(),
         // DATABASE_NAME: Joi.string().required(),
       }),
-      envFilePath: ['.env'],
+      envFilePath: [".env"],
     }),
-// DatabaseModule,
+    // DatabaseModule,
+    SupabaseModule,
     PricesModule,
     PricesAllModule,
     CrawlerModule,
