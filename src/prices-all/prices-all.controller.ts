@@ -12,8 +12,24 @@ export class PricesAllController {
   async getRssFeed(
     @Param('site') site: string,
     @Query('type') type?: string,
-  ) {
-    return this.pricesAllService.scrapeAllAsRss(site, type);
+  ): Promise<string> {
+    try {
+      return await this.pricesAllService.scrapeAllAsRss(site, type);
+    } catch (error) {
+      // Return error as valid RSS XML to avoid Fastify payload error
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      return `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Error</title>
+    <description>Failed to fetch prices: ${errorMessage}</description>
+    <item>
+      <title>Error</title>
+      <description>${errorMessage}</description>
+    </item>
+  </channel>
+</rss>`;
+    }
   }
 
   @Get(':site')
@@ -30,15 +46,21 @@ export class PricesAllController {
   async getSupportedSites() {
     return {
       message: 'Prices All API - Get all gold prices per weight',
-      supportedSites: ['anekalogam', 'indogold', 'pegadaian'],
+      supportedSites: ['anekalogam', 'indogold', 'pegadaian', 'galeri24'],
       usage: {
         json: '/prices-all/:site',
+        jsonWithType: '/prices-all/:site?type=:type',
         rss: '/prices-all/:site/rss',
+        rssWithType: '/prices-all/:site/rss?type=:type',
       },
       examples: {
         json: '/prices-all/anekalogam',
+        jsonFiltered: '/prices-all/anekalogam?type=antam-certicard',
         rss: '/prices-all/anekalogam/rss',
+        rssFiltered: '/prices-all/galeri24/rss?type=antam',
       },
+      galeri24Types: ['antam', 'ubs', 'galeri24', 'baby-galeri24', 'dinar-g24', 'batik-series'],
+      anekalogamTypes: ['antam-certicard', 'antam-old'],
     };
   }
 }

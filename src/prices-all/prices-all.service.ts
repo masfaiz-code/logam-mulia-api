@@ -38,8 +38,11 @@ export class PricesAllService {
       case 'pegadaian':
         result = await this.scrapePegadaian();
         break;
+      case 'galeri24':
+        result = await this.scrapeGaleri24();
+        break;
       default:
-        throw new Error(`Site "${site}" is not supported for full price scraping. Supported sites: anekalogam, indogold, pegadaian`);
+        throw new Error(`Site "${site}" is not supported for full price scraping. Supported sites: anekalogam, indogold, pegadaian, galeri24`);
     }
 
     // Filter by type if specified
@@ -63,6 +66,11 @@ export class PricesAllService {
       'antam-certicard': 'Antam Certicard',
       'antam-old': 'Antam Edisi Lama',
       'pegadaian': 'Pegadaian',
+      'galeri24': 'Galeri 24',
+      'ubs': 'UBS',
+      'baby-galeri24': 'Baby Galeri 24',
+      'dinar-g24': 'Dinar G24',
+      'batik-series': 'Batik Series',
     };
     return titles[type] || type;
   }
@@ -420,5 +428,117 @@ Update terakhir: ${currentDateTime}`;
         scrapedAt: new Date().toISOString(),
       },
     };
+  }
+
+  private async scrapeGaleri24(): Promise<ScrapeResult> {
+    const url = 'https://galeri24.co.id/harga-emas';
+    const response = await firstValueFrom(
+      this.httpService.get(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        },
+      }),
+    );
+
+    const $ = cheerio.load(response.data);
+    const prices: PriceItem[] = [];
+    let lastUpdated: string | null = null;
+
+    // Extract __NUXT_DATA__ JSON from script tag
+    const nuxtDataScript = $('#__NUXT_DATA__').html();
+    
+    if (nuxtDataScript) {
+      try {
+        const nuxtData = JSON.parse(nuxtDataScript);
+        
+        // Find goldPrice data in the nested array structure
+        // The data structure is a flat array with references
+        if (Array.isArray(nuxtData) && nuxtData.length > 0) {
+          // Find the goldPrice array (it's usually at index 3 of the first reactive object)
+          const dataObj = nuxtData[1];
+          if (dataObj && dataObj.data !== undefined) {
+            const goldPriceIndex = dataObj.data;
+            const goldPriceData = nuxtData[goldPriceIndex];
+            
+            if (goldPriceData && goldPriceData.goldPrice !== undefined) {
+              const priceArrayIndex = goldPriceData.goldPrice;
+              const priceArray = nuxtData[priceArrayIndex];
+              
+              if (Array.isArray(priceArray)) {
+                // Each item in priceArray is an index to the actual price object
+                for (const itemIndex of priceArray) {
+                  const priceObj = nuxtData[itemIndex];
+                  
+                  if (priceObj && typeof priceObj === 'object') {
+                    // Extract values from the object (values are indices to actual data)
+                    const denomination = nuxtData[priceObj.denomination];
+                    const sellingPrice = nuxtData[priceObj.sellingPrice];
+                    const buybackPrice = nuxtData[priceObj.buybackPrice];
+                    const vendorName = nuxtData[priceObj.vendorName];
+                    const date = nuxtData[priceObj.date];
+                    
+                    if (denomination && sellingPrice) {
+                      const weight = parseFloat(denomination);
+                      const sell = parseInt(sellingPrice) || 0;
+                      const buy = parseInt(buybackPrice) || 0;
+                      
+                      // Convert vendor name to type slug
+                      const type = this.vendorToType(vendorName);
+                      
+                      if (weight > 0 && sell > 0) {
+                        prices.push({
+                          weight,
+                          unit: 'gram',
+                          sell,
+                          buy,
+                          type,
+                        });
+                      }
+                      
+                      // Use date as lastUpdated
+                      if (date && !lastUpdated) {
+                        lastUpdated = date;
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        // JSON parse failed, continue with empty prices
+        console.error('Failed to parse Galeri24 NUXT data:', e);
+      }
+    }
+
+    // Sort by weight
+    prices.sort((a, b) => a.weight - b.weight);
+
+    return {
+      data: prices,
+      meta: {
+        source: 'galeri24',
+        url,
+        lastUpdated,
+        scrapedAt: new Date().toISOString(),
+      },
+    };
+  }
+
+  private vendorToType(vendorName: string): string {
+    if (!vendorName) return 'other';
+    
+    const name = vendorName.toLowerCase();
+    
+    if (name.includes('antam')) return 'antam';
+    if (name.includes('ubs')) return 'ubs';
+    if (name.includes('baby galeri') || name.includes('baby-galeri')) return 'baby-galeri24';
+    if (name.includes('galeri 24') || name.includes('galeri24')) return 'galeri24';
+    if (name.includes('dinar')) return 'dinar-g24';
+    if (name.includes('batik')) return 'batik-series';
+    
+    // Return slugified vendor name for unknown types
+    return vendorName.toLowerCase().replace(/\s+/g, '-');
   }
 }
